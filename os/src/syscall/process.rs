@@ -54,10 +54,7 @@ pub fn sys_trace(_trace_request: usize, _id: usize, _data: usize) -> isize {
             }
             0
         }
-        2 => {
-            let s = crate ::task::syscall_time(_id);
-            s as isize
-        }
+        2 => crate::task::syscall_time(_id) as isize,
         _ => -1,
     }
 }
