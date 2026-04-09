@@ -10,7 +10,7 @@ pub struct TaskControlBlock {
     /// The task context
     pub task_cx: TaskContext,
     /// Whether to trace the task
-    pub trace_number: [usize; 512],
+    pub trace_number: [usize; 1024],
 }
 /// The status of a task
 #[derive(Copy, Clone, PartialEq)]
