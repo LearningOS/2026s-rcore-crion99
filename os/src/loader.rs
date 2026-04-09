@@ -23,11 +23,11 @@ struct UserStack {
 
 static KERNEL_STACK: [KernelStack; MAX_APP_NUM] = [KernelStack {
     data: [0; KERNEL_STACK_SIZE],
-}; MAX_APP_NUM];
+}; MAX_APP_NUM];//内核栈，要对齐到页边界，以满足RISC-V的栈保护机制（stack guard）要求
 
 static USER_STACK: [UserStack; MAX_APP_NUM] = [UserStack {
     data: [0; USER_STACK_SIZE],
-}; MAX_APP_NUM];
+}; MAX_APP_NUM];//用户栈，要对齐到页边界，以满足RISC-V的栈保护机制（stack guard）要求
 
 impl KernelStack {
     fn get_sp(&self) -> usize {
@@ -39,7 +39,7 @@ impl KernelStack {
             *trap_cx_ptr = trap_cx;
         }
         trap_cx_ptr as usize
-    }
+    }// 获取内核栈顶地址，并将 trap_cx 压入内核栈，返回 trap_cx 的地址
 }
 
 impl UserStack {
@@ -51,7 +51,7 @@ impl UserStack {
 /// Get base address of app i.
 fn get_base_i(app_id: usize) -> usize {
     APP_BASE_ADDRESS + app_id * APP_SIZE_LIMIT
-}
+}// 获取 app_id 对应的应用程序的基地址
 
 /// Get the total number of applications.
 pub fn get_num_app() -> usize {

@@ -14,24 +14,24 @@ const APP_SIZE_LIMIT: usize = 0x20000;
 #[repr(align(4096))]
 struct KernelStack {
     data: [u8; KERNEL_STACK_SIZE],
-}
+}// 内核栈，用户栈都要对齐到页边界，以满足RISC-V的栈保护机制（stack guard）要求
 
 #[repr(align(4096))]
 struct UserStack {
     data: [u8; USER_STACK_SIZE],
-}
+}// 内核栈，用户栈都要对齐到页边界，以满足RISC-V的栈保护机制（stack guard）要求
 
 static KERNEL_STACK: KernelStack = KernelStack {
     data: [0; KERNEL_STACK_SIZE],
-};
+};//对齐
 static USER_STACK: UserStack = UserStack {
     data: [0; USER_STACK_SIZE],
-};
+};//对齐
 
 impl KernelStack {
     fn get_sp(&self) -> usize {
         self.data.as_ptr() as usize + KERNEL_STACK_SIZE
-    }
+    }// 获取内核栈顶地址
     pub fn push_context(&self, cx: TrapContext) -> &'static mut TrapContext {
         let cx_ptr = (self.get_sp() - core::mem::size_of::<TrapContext>()) as *mut TrapContext;
         unsafe {

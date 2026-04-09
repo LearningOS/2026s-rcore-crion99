@@ -9,8 +9,9 @@ pub struct TaskControlBlock {
     pub task_status: TaskStatus,
     /// The task context
     pub task_cx: TaskContext,
+    /// Whether to trace the task
+    pub trace_number: [usize; 512],
 }
-
 /// The status of a task
 #[derive(Copy, Clone, PartialEq)]
 pub enum TaskStatus {

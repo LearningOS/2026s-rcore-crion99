@@ -54,6 +54,7 @@ lazy_static! {
         let mut tasks = [TaskControlBlock {
             task_cx: TaskContext::zero_init(),
             task_status: TaskStatus::UnInit,
+            trace_number: [0; 512],
         }; MAX_APP_NUM];
         for (i, task) in tasks.iter_mut().enumerate() {
             task.task_cx = TaskContext::goto_restore(init_app_cx(i));
@@ -135,6 +136,27 @@ impl TaskManager {
             panic!("All applications completed!");
         }
     }
+    fn current_task(&self) -> usize {
+        let inner = self.inner.exclusive_access();
+        inner.current_task
+    }
+    ///查询当前任务的trace_number[id]，如果id越界则返回0
+    fn syscall_time(&self, id: usize) -> usize {
+        let inner = self.inner.exclusive_access();
+        if id < inner.tasks[inner.current_task].trace_number.len() {
+            inner.tasks[inner.current_task].trace_number[id]
+        } else {
+            0
+        }
+    }
+    ///+1 trace_number[id]，如果id越界则不进行任何操作
+    fn syscall_trace(&self, id: usize) {
+        let mut inner = self.inner.exclusive_access();
+        let current = inner.current_task;
+        if id < inner.tasks[current].trace_number.len() {
+            inner.tasks[current].trace_number[id] += 1;
+        }
+    }
 }
 
 /// Run the first task in task list.
@@ -168,4 +190,18 @@ pub fn suspend_current_and_run_next() {
 pub fn exit_current_and_run_next() {
     mark_current_exited();
     run_next_task();
+}
+
+/// Get the id of current `Running` task.
+pub fn current_task() -> usize {
+    TASK_MANAGER.current_task()
+}
+
+/// Get the time of current `Running` task.
+pub fn syscall_time(id: usize) -> usize {
+    TASK_MANAGER.syscall_time(id)
+}
+///+1 trace_number[id]，如果id越界则不进行任何操作
+pub fn syscall_trace(id: usize) {
+    TASK_MANAGER.syscall_trace(id);
 }
