@@ -1,4 +1,3 @@
-# Building
 TARGET := riscv64gc-unknown-none-elf
 MODE := release
 KERNEL_ELF := target/$(TARGET)/$(MODE)/os
@@ -10,6 +9,10 @@ OFFLINE :=
 BOARD := qemu
 SBI ?= rustsbi
 BOOTLOADER := ../bootloader/$(SBI)-$(BOARD).bin
+
+# user dir
+USER_DIR ?= ../user
+export USER_DIR
 
 # Building mode argument
 ifeq ($(MODE), release)
@@ -44,7 +47,7 @@ $(KERNEL_BIN): kernel
 	@$(OBJCOPY) $(KERNEL_ELF) --strip-all -O binary $@
 
 kernel:
-	@make -C ../user build TEST=$(TEST) CHAPTER=$(CHAPTER) BASE=$(BASE)
+	@make -C $(USER_DIR) build TEST=$(TEST) CHAPTER=$(CHAPTER) BASE=$(BASE)
 	@echo Platform: $(BOARD)
 	@cargo build $(MODE_ARG)
 

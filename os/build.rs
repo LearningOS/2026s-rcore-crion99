@@ -1,21 +1,22 @@
-//! Building applications linker
-
+use std::env;
 use std::fs::{read_dir, File};
 use std::io::{Result, Write};
 
 fn main() {
-    println!("cargo:rerun-if-changed=../user/src/");
-    println!("cargo:rerun-if-changed={}", TARGET_PATH);
-    insert_app_data().unwrap();
+    let user_dir = env::var("USER_DIR").unwrap_or("../user".to_string());
+    let src_path = format!("{}/src/", user_dir);
+    let target_path = format!("{}/build/bin/", user_dir);
+
+    println!("cargo:rerun-if-changed={}", src_path);
+    println!("cargo:rerun-if-changed={}", target_path);
+
+    insert_app_data(&target_path).unwrap();
 }
 
-static TARGET_PATH: &str = "../user/build/bin/";
-
 /// get app data and build linker
-fn insert_app_data() -> Result<()> {
+fn insert_app_data(target_path: &str) -> Result<()> {
     let mut f = File::create("src/link_app.S").unwrap();
-    let mut apps: Vec<_> = read_dir("../user/build/bin/")
-        .unwrap()
+    let mut apps: Vec<_> = read_dir(target_path)?
         .into_iter()
         .map(|dir_entry| {
             let mut name_with_ext = dir_entry.unwrap().file_name().into_string().unwrap();
@@ -23,6 +24,7 @@ fn insert_app_data() -> Result<()> {
             name_with_ext
         })
         .collect();
+
     apps.sort();
 
     writeln!(
@@ -52,7 +54,7 @@ _num_app:
 app_{0}_start:
     .incbin "{2}{1}.bin"
 app_{0}_end:"#,
-            idx, app, TARGET_PATH
+            idx, app, target_path
         )?;
     }
     Ok(())
