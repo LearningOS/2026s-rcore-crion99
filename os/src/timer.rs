@@ -20,13 +20,15 @@ pub fn get_time() -> usize {
 /// get current time in milliseconds
 #[allow(dead_code)]
 pub fn get_time_ms() -> usize {
-    time::read() * MSEC_PER_SEC / CLOCK_FREQ
+     let t = time::read() * MSEC_PER_SEC / CLOCK_FREQ;
+    if t == 0 { 1 } else { t }
 }
 
 /// get current time in microseconds
 #[allow(dead_code)]
 pub fn get_time_us() -> usize {
-    time::read() * MICRO_PER_SEC / CLOCK_FREQ
+   let t = time::read() * MICRO_PER_SEC / CLOCK_FREQ;
+   if t == 0 { 1 } else { t }
 }
 
 /// Set the next timer interrupt
