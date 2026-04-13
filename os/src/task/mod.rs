@@ -153,6 +153,28 @@ impl TaskManager {
             panic!("All applications completed!");
         }
     }
+
+     fn trace_syscall(&self, syscall_id: usize) {
+        let mut inner = self.inner.exclusive_access();
+        let current = inner.current_task;
+        inner.tasks[current].syscall_count[syscall_id] += 1;
+    }
+
+     fn get_syscall_count(&self, syscall_id: usize) -> usize {
+        let inner = self.inner.exclusive_access();
+        let current = inner.current_task;
+        inner.tasks[current].syscall_count[syscall_id]
+    }
+    /// Run a closure with the current 'Running' task
+    
+pub fn with_current_task<T>(&self, f: impl FnOnce(&mut TaskControlBlock) -> T) -> T {
+        let mut inner = self.inner.exclusive_access();
+        let current = inner.current_task;
+        f(&mut inner.tasks[current])
+    }
+
+
+
 }
 
 /// Run the first task in task list.
@@ -201,4 +223,18 @@ pub fn current_trap_cx() -> &'static mut TrapContext {
 /// Change the current 'Running' task's program break
 pub fn change_program_brk(size: i32) -> Option<usize> {
     TASK_MANAGER.change_current_program_brk(size)
+}
+
+/// 给当前正在运行的任务调用了syscall_id这个系统调用一次
+pub fn trace_syscall(syscall_id: usize) {
+    TASK_MANAGER.trace_syscall(syscall_id);
+}
+///获得当前正在运行的任务调用了多少次syscall_id这个系统调用
+pub fn get_syscall_count(syscall_id: usize) -> usize {
+    TASK_MANAGER.get_syscall_count(syscall_id)
+}
+
+/// Run a closure with the current 'Running' task
+pub fn with_current_task<T>(f: impl FnOnce(&mut TaskControlBlock) -> T) -> T {
+    TASK_MANAGER.with_current_task(f)
 }

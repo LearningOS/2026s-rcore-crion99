@@ -262,6 +262,56 @@ impl MemorySet {
             false
         }
     }
+    /// Check if the area overlaps with existing mapped areas
+    pub fn is_overlap_with_mapped(&self, start: VirtPageNum, end: VirtPageNum) -> bool {
+        for area in self.areas.iter() {
+            let l = area.vpn_range.get_start();
+            let r = area.vpn_range.get_end();
+            if start < r && l < end {
+                return true;
+            }
+        }
+        false
+    }
+    ///插入一个新的映射区域，返回是否成功
+    pub fn mmap(&mut self, start: usize, len: usize, mut perm: MapPermission) -> bool {
+        let start_va = VirtAddr::from(start);
+        let end_va = VirtAddr::from(start + len);
+
+        let start_vpn = start_va.floor();
+        let end_vpn = end_va.ceil();
+
+        if self.is_overlap_with_mapped(start_vpn, end_vpn) {
+            return false;
+        }
+
+        perm |= MapPermission::U;
+
+        self.push(MapArea::new(start_va, end_va, MapType::Framed, perm), None);
+        true
+    }
+
+    ///移除一个映射区域，返回是否成功
+    pub fn munmap(&mut self, start: usize, len: usize) -> bool {
+        let start_va = VirtAddr::from(start);
+        let end_va = VirtAddr::from(start + len);
+
+        let start_vpn = start_va.floor();
+        let end_vpn = end_va.ceil();
+
+        for vpn in VPNRange::new(start_vpn, end_vpn) {
+            if self.page_table.translate(vpn).is_none() {
+                return false;
+            }
+        }
+
+        for vpn in VPNRange::new(start_vpn, end_vpn) {
+            self.page_table.unmap(vpn);
+        }
+
+        
+        true
+    }
 }
 /// map area structure, controls a contiguous piece of virtual memory
 pub struct MapArea {
