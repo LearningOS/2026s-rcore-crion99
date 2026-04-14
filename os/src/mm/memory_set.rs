@@ -273,99 +273,95 @@ impl MemorySet {
         }
         false
     }
-    ///插入一个新的映射区域，返回是否成功
-    pub fn mmap(&mut self, start: usize, len: usize, mut perm: MapPermission) -> bool {
-        let start_va = VirtAddr::from(start);
-        let end_va = VirtAddr::from(start + len);
+    /// Check if the area is completely covered by existing mapped areas
+    pub fn mmap(&mut self, start: usize, len: usize, prot: usize) -> isize {
+    use crate::config::PAGE_SIZE;
+    use crate::mm::{VirtAddr, VPNRange, MapPermission};
 
-        let start_vpn = start_va.floor();
-        let end_vpn = end_va.ceil();
-
-        if self.is_overlap_with_mapped(start_vpn, end_vpn) {
-            return false;
-        }
-
-        perm |= MapPermission::U;
-
-        self.push(MapArea::new(start_va, end_va, MapType::Framed, perm), None);
-        true
+    if start % PAGE_SIZE != 0 {
+        return -1;
+    }
+    if prot & !0x7 != 0 {
+        return -1;
+    }
+    if prot & 0x7 == 0 {
+        return -1;
+    }
+    if len == 0 {
+        return 0;
     }
 
-    ///移除一个映射区域，返回是否成功
-    pub fn munmap(&mut self, start: usize, len: usize) -> bool {
-        let start_va = VirtAddr::from(start);
+    let start_va = VirtAddr::from(start);
     let end_va = VirtAddr::from(start + len);
 
-    let start_vpn = start_va.floor();
-    let end_vpn = end_va.ceil();
-
-    if start_vpn == end_vpn {
-        return true;
-    }
-
-    // 1. 先检查 [start, start + len) 覆盖到的每一页都已经映射
-    for vpn in VPNRange::new(start_vpn, end_vpn) {
-        if self.page_table.translate(vpn).is_none() {
-            return false;
+    let vpn_range = VPNRange::new(start_va.floor(), end_va.ceil());
+    for vpn in vpn_range.clone() {
+        if self.translate(vpn).is_some() {
+            return -1;
         }
     }
 
-    // 2. 先取消页表映射
+    let mut perm = MapPermission::U;
+    if prot & 0x1 != 0 {
+        perm |= MapPermission::R;
+    }
+    if prot & 0x2 != 0 {
+        perm |= MapPermission::W;
+    }
+    if prot & 0x4 != 0 {
+        perm |= MapPermission::X;
+    }
+
+    let area = MapArea::new(start_va, end_va, MapType::Framed, perm);
+    self.push(area, None);
+
+    0
+}
+
+/// Unmap the area starting from `start` with length `len`.
+ pub fn munmap(&mut self, start: usize, len: usize) -> isize {
+    use crate::config::PAGE_SIZE;
+    use crate::mm::{VirtAddr, VPNRange};
+
+    if start % PAGE_SIZE != 0 {
+        return -1;
+    }
+    if len == 0 {
+        return 0;
+    }
+
+    let start_vpn = VirtAddr::from(start).floor();
+    let end_vpn = VirtAddr::from(start + len).ceil();
+
+    // 先检查所有页都已经映射
+    for vpn in VPNRange::new(start_vpn, end_vpn) {
+        if self.page_table.translate(vpn).is_none() {
+            return -1;
+        }
+    }
+
+    // 找到正好对应的 area
+    let pos = self.areas.iter().position(|area| {
+        area.vpn_range.get_start() == start_vpn &&
+        area.vpn_range.get_end() == end_vpn
+    });
+
+    let idx = match pos {
+        Some(i) => i,
+        None => return -1,
+    };
+
+    // 删页表映射
     for vpn in VPNRange::new(start_vpn, end_vpn) {
         self.page_table.unmap(vpn);
     }
 
-    // 3. 再同步更新 areas
-    let mut i = 0;
-    while i < self.areas.len() {
-        let area_start = self.areas[i].vpn_range.get_start();
-        let area_end = self.areas[i].vpn_range.get_end();
+    // 删 area
+    self.areas.remove(idx);
 
-        // 没交集
-        if end_vpn <= area_start || area_end <= start_vpn {
-            i += 1;
-            continue;
-        }
+    0
+}
 
-        // 情况 1：整个 area 都被删掉
-        if start_vpn <= area_start && area_end <= end_vpn {
-            self.areas.remove(i);
-            continue;
-        }
-
-        // 情况 2：删掉左半段，保留右半段
-        if start_vpn <= area_start && end_vpn < area_end {
-            self.areas[i].vpn_range = VPNRange::new(end_vpn, area_end);
-            i += 1;
-            continue;
-        }
-
-        // 情况 3：删掉右半段，保留左半段
-        if area_start < start_vpn && area_end <= end_vpn {
-            self.areas[i].vpn_range = VPNRange::new(area_start, start_vpn);
-            i += 1;
-            continue;
-        }
-
-        // 情况 4：从中间挖掉，需要拆成两段
-        if area_start < start_vpn && end_vpn < area_end {
-            let right_part = MapArea::new(
-                VirtAddr::from(end_vpn),
-                VirtAddr::from(area_end),
-                self.areas[i].map_type,
-                self.areas[i].map_perm,
-            );
-            self.areas[i].vpn_range = VPNRange::new(area_start, start_vpn);
-            self.areas.insert(i + 1, right_part);
-            i += 2;
-            continue;
-        }
-
-        i += 1;
-    }
-
-    true
-    }
 }
 /// map area structure, controls a contiguous piece of virtual memory
 pub struct MapArea {

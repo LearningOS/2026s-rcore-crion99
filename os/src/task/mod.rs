@@ -20,6 +20,7 @@ use crate::trap::TrapContext;
 use alloc::vec::Vec;
 use lazy_static::*;
 use switch::__switch;
+use core::cell::RefMut;
 pub use task::{TaskControlBlock, TaskStatus};
 
 pub use context::TaskContext;
@@ -153,36 +154,30 @@ impl TaskManager {
             panic!("All applications completed!");
         }
     }
-     fn trace_syscall(&self, syscall_id: usize) {
-        let mut inner = self.inner.exclusive_access();
-        let current = inner.current_task;
-            if syscall_id < inner.tasks[current].syscall_count.len() {
-                inner.tasks[current].syscall_count[syscall_id] += 1;
-            } else {
-        inner.tasks[current].syscall_count[syscall_id] += 1;
-            }
+    fn trace_syscall(&self, syscall_id: usize) {
+        let mut inner: RefMut<'_, TaskManagerInner> = self.inner.exclusive_access();
+        let current: usize = inner.current_task;
+        if syscall_id < inner.tasks[current].syscall_count.len() {
+            inner.tasks[current].syscall_count[syscall_id] += 1;
+        }
     }
 
-     fn get_syscall_count(&self, syscall_id: usize) -> usize {
+    fn get_syscall_count(&self, syscall_id: usize) -> usize {
         let inner = self.inner.exclusive_access();
         let current = inner.current_task;
         if syscall_id >= inner.tasks[inner.current_task].syscall_count.len() {
             0
         } else {
-        inner.tasks[current].syscall_count[syscall_id]
+            inner.tasks[current].syscall_count[syscall_id]
         }
     }
     /// Run a closure with the current 'Running' task
-    
-pub fn with_current_task<T>(&self, f: impl FnOnce(&mut TaskControlBlock) -> T) -> T {
-    
+
+    pub fn with_current_task<T>(&self, f: impl FnOnce(&mut TaskControlBlock) -> T) -> T {
         let mut inner = self.inner.exclusive_access();
         let current = inner.current_task;
         f(&mut inner.tasks[current])
     }
-
-
-
 }
 
 /// Run the first task in task list.
