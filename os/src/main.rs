@@ -5,7 +5,7 @@
 //!
 //! - [`trap`]: Handles all cases of switching from userspace to the kernel
 //! - [`task`]: Task management
-//! - [`syscall`]: System call handling and implementation
+//! - [`syscall`]: System call handling and implementation123
 //!
 //! The operating system also starts in this module. Kernel code starts
 //! executing from `entry.asm`, after which [`rust_main()`] is called to
