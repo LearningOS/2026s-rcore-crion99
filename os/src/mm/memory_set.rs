@@ -296,8 +296,9 @@ impl MemorySet {
 
     let vpn_range = VPNRange::new(start_va.floor(), end_va.ceil());
     for vpn in vpn_range.clone() {
-        if self.translate(vpn).is_some() {
-            return -1;
+        match self.translate(vpn) {
+            Some(pte) if pte.is_valid() => return -1,
+            _ => {}
         }
     }
 
@@ -318,8 +319,9 @@ impl MemorySet {
     0
 }
 
+
 /// Unmap the area starting from `start` with length `len`.
- pub fn munmap(&mut self, start: usize, len: usize) -> isize {
+pub fn munmap(&mut self, start: usize, len: usize) -> isize {
     use crate::config::PAGE_SIZE;
     use crate::mm::{VirtAddr, VPNRange};
 
@@ -333,34 +335,49 @@ impl MemorySet {
     let start_vpn = VirtAddr::from(start).floor();
     let end_vpn = VirtAddr::from(start + len).ceil();
 
-    // 先检查所有页都已经映射
+    // 1. 先检查目标区间都已经映射
     for vpn in VPNRange::new(start_vpn, end_vpn) {
         if self.page_table.translate(vpn).is_none() {
             return -1;
         }
     }
 
-    // 找到正好对应的 area
-    let pos = self.areas.iter().position(|area| {
-        area.vpn_range.get_start() == start_vpn &&
-        area.vpn_range.get_end() == end_vpn
-    });
-
-    let idx = match pos {
+    // 2. 找到完全包含 [start_vpn, end_vpn) 的 area
+    let idx = match self.areas.iter().position(|area| {
+        let area_start = area.vpn_range.get_start();
+        let area_end = area.vpn_range.get_end();
+        start_vpn >= area_start && end_vpn <= area_end
+    }) {
         Some(i) => i,
         None => return -1,
     };
 
-    // 删页表映射
-    for vpn in VPNRange::new(start_vpn, end_vpn) {
-        self.page_table.unmap(vpn);
-    }
+    let area_start = self.areas[idx].vpn_range.get_start();
+    let area_end = self.areas[idx].vpn_range.get_end();
 
-    // 删 area
-    self.areas.remove(idx);
+    // 3. 分类处理
+    if start_vpn == area_start && end_vpn == area_end {
+        // 整段删掉
+        self.areas[idx].unmap(&mut self.page_table);
+        self.areas.remove(idx);
+    } else if end_vpn == area_end {
+        // 从右边裁掉，保留左边
+        self.areas[idx].shrink_to(&mut self.page_table, start_vpn);
+    } else if start_vpn == area_start {
+        // 从左边裁掉，保留右边
+        for vpn in VPNRange::new(start_vpn, end_vpn) {
+            self.areas[idx].unmap_one(&mut self.page_table, vpn);
+        }
+        self.areas[idx].vpn_range = VPNRange::new(end_vpn, area_end);
+    } else {
+        // 中间挖空，这题先不支持
+        return -1;
+    }
 
     0
 }
+
+
 
 }
 /// map area structure, controls a contiguous piece of virtual memory

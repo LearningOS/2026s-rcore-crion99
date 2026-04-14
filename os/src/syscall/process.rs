@@ -65,42 +65,38 @@ pub fn sys_get_time(_ts: *mut TimeVal, _tz: usize) -> isize {
 
 /// TODO: Finish sys_trace to pass testcases
 /// HINT: You might reimplement it with virtual memory management.
+use crate::mm::{PageTable, PageTableEntry, PTEFlags, VirtAddr};
+
 pub fn sys_trace(_trace_request: usize, _id: usize, _data: usize) -> isize {
     trace!("kernel: sys_trace");
+
+    let token = current_user_token();
+    let page_table = PageTable::from_token(token);
+    let va = VirtAddr::from(_id);
+    let vpn = va.floor();
+    let offset = va.page_offset();
+
     match _trace_request {
         0 => {
-            let token = current_user_token();
-            let page_table = crate::mm::PageTable::from_token(token);
-            let va = crate::mm::VirtAddr::from(_id);
-            let vpn = va.floor();
-            let offset = va.page_offset();
-
-            let pte = match page_table.translate(vpn) {
+            let pte: PageTableEntry = match page_table.translate(vpn) {
                 Some(pte) => pte,
                 None => return -1,
             };
-            if !pte.is_valid() || !pte.readable() {
+            let flags = pte.flags();
+            if !pte.is_valid() || !pte.readable() || !flags.contains(PTEFlags::U) {
                 return -1;
             }
-
-            let value = pte.ppn().get_bytes_array()[offset];
-            value as isize
+            pte.ppn().get_bytes_array()[offset] as isize
         }
         1 => {
-            let token = current_user_token();
-            let page_table = crate::mm::PageTable::from_token(token);
-            let va = crate::mm::VirtAddr::from(_id);
-            let vpn = va.floor();
-            let offset = va.page_offset();
-
-            let pte = match page_table.translate(vpn) {
+            let pte: PageTableEntry = match page_table.translate(vpn) {
                 Some(pte) => pte,
                 None => return -1,
             };
-            if !pte.is_valid() || !pte.writable() {
+            let flags = pte.flags();
+            if !pte.is_valid() || !pte.writable() || !flags.contains(PTEFlags::U) {
                 return -1;
             }
-
             pte.ppn().get_bytes_array()[offset] = (_data & 0xff) as u8;
             0
         }
@@ -109,21 +105,33 @@ pub fn sys_trace(_trace_request: usize, _id: usize, _data: usize) -> isize {
     }
 }
 
+
+
 // YOUR JOB: Implement mmap.
+use core::arch::asm;
+
 pub fn sys_mmap(start: usize, len: usize, prot: usize) -> isize {
     trace!("kernel: sys_mmap");
-    crate::task::TASK_MANAGER.with_current_task(|task| {
+    let ret = crate::task::TASK_MANAGER.with_current_task(|task| {
         task.memory_set.mmap(start, len, prot)
-    })
+    });
+    if ret == 0 {
+        unsafe { asm!("sfence.vma"); }
+    }
+    ret
+}
+/// YOUR JOB: Implement munmap.
+pub fn sys_munmap(start: usize, len: usize) -> isize {
+    trace!("kernel: sys_munmap");
+    let ret = crate::task::TASK_MANAGER.with_current_task(|task| {
+        task.memory_set.munmap(start, len)
+    });
+    if ret == 0 {
+        unsafe { asm!("sfence.vma"); }
+    }
+    ret
 }
 
-// YOUR JOB: Implement munmap.
-pub fn sys_munmap(_start: usize, _len: usize) -> isize {
-    trace!("kernel: sys_munmap");
-    crate::task::TASK_MANAGER.with_current_task(|task| {
-        task.memory_set.munmap(_start, _len)
-    })
-}
 
 /// change data segment sizedsadsadas
 pub fn sys_sbrk(size: i32) -> isize {
