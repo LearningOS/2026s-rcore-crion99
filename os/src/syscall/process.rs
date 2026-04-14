@@ -30,43 +30,111 @@ pub fn sys_yield() -> isize {
 /// HINT: What if [`TimeVal`] is splitted by two pages ?
 pub fn sys_get_time(_ts: *mut TimeVal, _tz: usize) -> isize {
     trace!("kernel: sys_get_time");
-    let token = current_user_token(); //拿到当前用户页表的token
-    let buffers =
-        crate::mm::translated_byte_buffer(token, _ts as *const u8, core::mem::size_of::<TimeVal>()); //翻译用户空间的指针为内核空间的指针
-    let time = crate::timer::get_time();
-    let bytes = unsafe {
+
+    if _ts.is_null() {
+        return -1;
+    }
+
+    let us = crate::timer::get_time_us();
+    let tv = TimeVal {
+        sec: us / 1_000_000,
+        usec: us % 1_000_000,
+    };
+
+    let src = unsafe {
         core::slice::from_raw_parts(
-            &time as *const _ as *const u8,
+            &tv as *const _ as *const u8,
             core::mem::size_of::<TimeVal>(),
         )
-    }; //将time结构体转换为字节数组
-    let mut offset = 0;
-    for buffer in buffers {
-        let len = buffer.len();
-        buffer.copy_from_slice(&bytes[offset..offset + len]);
-        offset += len;
+    };
+
+    let token = current_user_token();
+    let mut user_buf = crate::mm::translated_byte_buffer(token, _ts as *const u8, src.len());
+
+    let mut copied = 0usize;
+    for buf in user_buf.iter_mut() {
+        let n = buf.len().min(src.len() - copied);
+        buf[..n].copy_from_slice(&src[copied..copied + n]);
+        copied += n;
+        if copied == src.len() {
+            break;
+        }
     }
-    0
+
+    if copied == src.len() {
+        0
+    } else {
+        -1
+    }
 }
 
 /// TODO: Finish sys_trace to pass testcases
 /// HINT: You might reimplement it with virtual memory management.
 pub fn sys_trace(_trace_request: usize, _id: usize, _data: usize) -> isize {
     trace!("kernel: sys_trace");
-    if _trace_request == 0 {
-        return -1;
-    } else if _trace_request == 1 {
-        return -1;
-    } else if _trace_request == 2 {
-        crate::task::trace_syscall(_id);
+    let token = current_user_token();
+    let page_table = crate::mm::PageTable::from_token(token);
+
+    match _trace_request {
+        // ===== trace_read =====
+        0 => {
+            let va = crate::mm::VirtAddr::from(_id);
+            let vpn = va.floor();
+            let offset = va.page_offset();
+
+            if let Some(pte) = page_table.translate(vpn) {
+                let flags = pte.flags();
+
+                // 必须：有效 + 用户 + 可读
+                if flags.contains(crate::mm::PTEFlags::V)
+                    && flags.contains(crate::mm::PTEFlags::U)
+                    && flags.contains(crate::mm::PTEFlags::R)
+                {
+                    let pa = pte.ppn().get_bytes_array();
+                    return pa[offset] as isize;
+                }
+            }
+            -1
+        }
+
+        // ===== trace_write =====
+        1 => {
+            let va = crate::mm::VirtAddr::from(_id);
+            let vpn = va.floor();
+            let offset = va.page_offset();
+
+            if let Some(pte) = page_table.translate(vpn) {
+                let flags = pte.flags();
+
+                // 必须：有效 + 用户 + 可写
+                if flags.contains(crate::mm::PTEFlags::V)
+                    && flags.contains(crate::mm::PTEFlags::U)
+                    && flags.contains(crate::mm::PTEFlags::W)
+                {
+                    let pa = pte.ppn().get_bytes_array();
+                    pa[offset] = _data as u8;
+                    return 0;
+                }
+            }
+            -1
+        }
+
+        // ===== 查询 syscall 次数 =====
+        2 => {
+            if _id >= crate::config::MAX_SYSCALL_NUM {
+                -1
+            } else {
+                crate::task::get_syscall_count(_id) as isize
+            }
+        }
+        _ => -1,
     }
-    0
 }
 
 // YOUR JOB: Implement mmap.
 pub fn sys_mmap(_start: usize, _len: usize, _port: usize) -> isize {
     trace!("kernel: sys_mmap NOT IMPLEMENTED YET!");
-     if _start % PAGE_SIZE != 0 {
+    if _start % PAGE_SIZE != 0 {
         return -1;
     }
     if _port & !0x7 != 0 {
@@ -94,17 +162,12 @@ pub fn sys_mmap(_start: usize, _len: usize, _port: usize) -> isize {
             -1
         }
     })
-
-
-
-
-
 }
 
 // YOUR JOB: Implement munmap.
 pub fn sys_munmap(_start: usize, _len: usize) -> isize {
-    trace!("kernel: sys_munmap NOT IMPLEMENTED YET!");
-     if _start % PAGE_SIZE != 0 {
+    trace!("kernel: sys_munmap");
+    if _start % PAGE_SIZE != 0 {
         return -1;
     }
 
@@ -116,7 +179,7 @@ pub fn sys_munmap(_start: usize, _len: usize) -> isize {
         }
     })
 }
-/// change data segment size
+/// change data segment sizedsadsadas
 pub fn sys_sbrk(size: i32) -> isize {
     trace!("kernel: sys_sbrk");
     if let Some(old_brk) = change_program_brk(size) {

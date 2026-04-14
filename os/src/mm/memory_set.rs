@@ -294,23 +294,77 @@ impl MemorySet {
     ///移除一个映射区域，返回是否成功
     pub fn munmap(&mut self, start: usize, len: usize) -> bool {
         let start_va = VirtAddr::from(start);
-        let end_va = VirtAddr::from(start + len);
+    let end_va = VirtAddr::from(start + len);
 
-        let start_vpn = start_va.floor();
-        let end_vpn = end_va.ceil();
+    let start_vpn = start_va.floor();
+    let end_vpn = end_va.ceil();
 
-        for vpn in VPNRange::new(start_vpn, end_vpn) {
-            if self.page_table.translate(vpn).is_none() {
-                return false;
-            }
+    if start_vpn == end_vpn {
+        return true;
+    }
+
+    // 1. 先检查 [start, start + len) 覆盖到的每一页都已经映射
+    for vpn in VPNRange::new(start_vpn, end_vpn) {
+        if self.page_table.translate(vpn).is_none() {
+            return false;
+        }
+    }
+
+    // 2. 先取消页表映射
+    for vpn in VPNRange::new(start_vpn, end_vpn) {
+        self.page_table.unmap(vpn);
+    }
+
+    // 3. 再同步更新 areas
+    let mut i = 0;
+    while i < self.areas.len() {
+        let area_start = self.areas[i].vpn_range.get_start();
+        let area_end = self.areas[i].vpn_range.get_end();
+
+        // 没交集
+        if end_vpn <= area_start || area_end <= start_vpn {
+            i += 1;
+            continue;
         }
 
-        for vpn in VPNRange::new(start_vpn, end_vpn) {
-            self.page_table.unmap(vpn);
+        // 情况 1：整个 area 都被删掉
+        if start_vpn <= area_start && area_end <= end_vpn {
+            self.areas.remove(i);
+            continue;
         }
 
-        
-        true
+        // 情况 2：删掉左半段，保留右半段
+        if start_vpn <= area_start && end_vpn < area_end {
+            self.areas[i].vpn_range = VPNRange::new(end_vpn, area_end);
+            i += 1;
+            continue;
+        }
+
+        // 情况 3：删掉右半段，保留左半段
+        if area_start < start_vpn && area_end <= end_vpn {
+            self.areas[i].vpn_range = VPNRange::new(area_start, start_vpn);
+            i += 1;
+            continue;
+        }
+
+        // 情况 4：从中间挖掉，需要拆成两段
+        if area_start < start_vpn && end_vpn < area_end {
+            let right_part = MapArea::new(
+                VirtAddr::from(end_vpn),
+                VirtAddr::from(area_end),
+                self.areas[i].map_type,
+                self.areas[i].map_perm,
+            );
+            self.areas[i].vpn_range = VPNRange::new(area_start, start_vpn);
+            self.areas.insert(i + 1, right_part);
+            i += 2;
+            continue;
+        }
+
+        i += 1;
+    }
+
+    true
     }
 }
 /// map area structure, controls a contiguous piece of virtual memory

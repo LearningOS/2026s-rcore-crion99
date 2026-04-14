@@ -37,6 +37,7 @@ pub struct PageTableEntry {
 
 impl PageTableEntry {
     /// Create a new page table entry
+    /// 
     pub fn new(ppn: PhysPageNum, flags: PTEFlags) -> Self {
         PageTableEntry {
             bits: ppn.0 << 10 | flags.bits as usize,

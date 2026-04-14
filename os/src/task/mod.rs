@@ -153,21 +153,29 @@ impl TaskManager {
             panic!("All applications completed!");
         }
     }
-
      fn trace_syscall(&self, syscall_id: usize) {
         let mut inner = self.inner.exclusive_access();
         let current = inner.current_task;
+            if syscall_id < inner.tasks[current].syscall_count.len() {
+                inner.tasks[current].syscall_count[syscall_id] += 1;
+            } else {
         inner.tasks[current].syscall_count[syscall_id] += 1;
+            }
     }
 
      fn get_syscall_count(&self, syscall_id: usize) -> usize {
         let inner = self.inner.exclusive_access();
         let current = inner.current_task;
+        if syscall_id >= inner.tasks[inner.current_task].syscall_count.len() {
+            0
+        } else {
         inner.tasks[current].syscall_count[syscall_id]
+        }
     }
     /// Run a closure with the current 'Running' task
     
 pub fn with_current_task<T>(&self, f: impl FnOnce(&mut TaskControlBlock) -> T) -> T {
+    
         let mut inner = self.inner.exclusive_access();
         let current = inner.current_task;
         f(&mut inner.tasks[current])
