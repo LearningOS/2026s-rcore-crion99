@@ -300,6 +300,142 @@ impl MemorySet {
             false
         }
     }
+    ///创建一个新的映射，映射类型为Framed，权限由port参数指定
+    pub fn mmap(&mut self, start: VirtAddr, len: usize, port: usize) -> bool {
+        if start.page_offset() != 0 {
+            return false;
+        }
+        if (port & !0x7) != 0 {
+            return false;
+        }
+        if (port & 0x7) == 0 {
+            return false;
+        }
+        if len == 0 {
+            return false;
+        }
+        let end_addr = match start.0.checked_add(len) {
+            Some(v) => v,
+            None => return false,
+        };
+        //检查是否有重叠
+        let start_va = start;
+        let end_va = VirtAddr::from(end_addr);
+
+        let start_vpn = start_va.floor();
+        let end_vpn = end_va.ceil();
+        for vpn in VPNRange::new(start_vpn, end_vpn) {
+            if self.translate(vpn).is_some() {
+                return false;
+            }
+        }
+        //插入新的映射
+        let mut map_perm = MapPermission::U;
+        if port & 0x1 != 0 {
+            map_perm |= MapPermission::R;
+        }
+        if port & 0x2 != 0 {
+            map_perm |= MapPermission::W;
+        }
+        if port & 0x4 != 0 {
+            map_perm |= MapPermission::X;
+        }
+        self.push(
+            MapArea::new(start_va, end_va, MapType::Framed, map_perm),
+            None,
+        );
+        true
+    }
+    ///取消一个映射
+    pub fn munmap(&mut self, start: VirtAddr, len: usize) -> bool {
+        if start.page_offset() != 0 {
+            return false;
+        }
+        if len == 0 {
+            return false;
+        }
+
+        let end_addr = match start.0.checked_add(len) {
+            Some(v) => v,
+            None => return false,
+        };
+
+        let start_vpn = start.floor();
+        let end_vpn = VirtAddr::from(end_addr).ceil();
+
+        // 1. 先检查 [start_vpn, end_vpn) 是否被 self.areas 完整覆盖
+        for vpn in VPNRange::new(start_vpn, end_vpn) {
+            let mut covered = false;
+            for area in self.areas.iter() {
+                let l = area.vpn_range.get_start();
+                let r = area.vpn_range.get_end();
+                if l <= vpn && vpn < r {
+                    covered = true;
+                    break;
+                }
+            }
+            if !covered {
+                return false;
+            }
+        }
+
+        // 2. 重建 areas：不相交的保留；相交的裁剪/拆分
+        let old_areas = core::mem::take(&mut self.areas);
+        let mut new_areas: Vec<MapArea> = Vec::new();
+
+        for mut area in old_areas.into_iter() {
+            let l = area.vpn_range.get_start();
+            let r = area.vpn_range.get_end();
+
+            // 无交集，直接保留
+            if r <= start_vpn || end_vpn <= l {
+                new_areas.push(area);
+                continue;
+            }
+
+            // 有交集，真正删除区间 [cut_l, cut_r)
+            let cut_l = if l > start_vpn { l } else { start_vpn };
+            let cut_r = if r < end_vpn { r } else { end_vpn };
+
+            // 3. 先把重叠部分逐页取消映射
+            for vpn in VPNRange::new(cut_l, cut_r) {
+                area.unmap_one(&mut self.page_table, vpn);
+            }
+
+            // 4. 左半部分保留
+            if l < cut_l {
+                let mut left = MapArea::from_another(&area);
+                left.vpn_range = VPNRange::new(l, cut_l);
+
+                if area.map_type == MapType::Framed {
+                    for vpn in VPNRange::new(l, cut_l) {
+                        let frame = area.data_frames.remove(&vpn).unwrap();
+                        left.data_frames.insert(vpn, frame);
+                    }
+                }
+
+                new_areas.push(left);
+            }
+
+            // 5. 右半部分保留
+            if cut_r < r {
+                let mut right = MapArea::from_another(&area);
+                right.vpn_range = VPNRange::new(cut_r, r);
+
+                if area.map_type == MapType::Framed {
+                    for vpn in VPNRange::new(cut_r, r) {
+                        let frame = area.data_frames.remove(&vpn).unwrap();
+                        right.data_frames.insert(vpn, frame);
+                    }
+                }
+
+                new_areas.push(right);
+            }
+        }
+
+        self.areas = new_areas;
+        true
+    }
 }
 /// map area structure, controls a contiguous piece of virtual memory
 pub struct MapArea {

@@ -9,6 +9,8 @@ use alloc::sync::{Arc, Weak};
 use alloc::vec::Vec;
 use core::cell::RefMut;
 
+pub const BIG_STRIDE: u64 = 1_000_000;
+pub const DEFAULT_STRIDE: u64 = 16;
 /// Task control block structure
 ///
 /// Directly save the contents that will not change during running
@@ -68,6 +70,11 @@ pub struct TaskControlBlockInner {
 
     /// Program break
     pub program_brk: usize,
+
+    ///优先级
+    pub priority: u64,
+    /// stride
+    pub stride: u64,
 }
 
 impl TaskControlBlockInner {
@@ -118,6 +125,9 @@ impl TaskControlBlock {
                     exit_code: 0,
                     heap_bottom: user_sp,
                     program_brk: user_sp,
+                    priority: DEFAULT_STRIDE,
+                    stride: 0,
+
                 })
             },
         };
@@ -191,6 +201,9 @@ impl TaskControlBlock {
                     exit_code: 0,
                     heap_bottom: parent_inner.heap_bottom,
                     program_brk: parent_inner.program_brk,
+
+                    priority: DEFAULT_STRIDE,
+                    stride: 0,
                 })
             },
         });
@@ -235,6 +248,27 @@ impl TaskControlBlock {
         } else {
             None
         }
+    }
+    ///创建一个新的子进程，子进程的地址空间是父进程的一个副本
+    pub fn spawn(self: &Arc<TaskControlBlock>, elf_data: &[u8]) -> Arc<TaskControlBlock> {
+
+        let child = Arc::new(TaskControlBlock::new(elf_data));
+
+
+        {
+            let mut child_inner = child.inner_exclusive_access();
+            child_inner.parent = Some(Arc::downgrade(self));
+        }
+        {
+            let mut parent_inner = self.inner_exclusive_access();
+            parent_inner.children.push(child.clone());
+        }
+
+        child
+    }
+    ///得到pass
+    pub fn get_pass(&self)->u64{
+        BIG_STRIDE / self.inner_exclusive_access().priority
     }
 }
 
