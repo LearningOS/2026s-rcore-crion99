@@ -314,22 +314,24 @@ impl MemorySet {
         if len == 0 {
             return false;
         }
+
         let end_addr = match start.0.checked_add(len) {
             Some(v) => v,
             None => return false,
         };
-        //检查是否有重叠
+
         let start_va = start;
         let end_va = VirtAddr::from(end_addr);
 
         let start_vpn = start_va.floor();
         let end_vpn = end_va.ceil();
+
         for vpn in VPNRange::new(start_vpn, end_vpn) {
-            if self.translate(vpn).is_some() {
+            if self.translate(vpn).map_or(false, |pte| pte.is_valid()) {
                 return false;
             }
         }
-        //插入新的映射
+
         let mut map_perm = MapPermission::U;
         if port & 0x1 != 0 {
             map_perm |= MapPermission::R;
@@ -340,6 +342,7 @@ impl MemorySet {
         if port & 0x4 != 0 {
             map_perm |= MapPermission::X;
         }
+
         self.push(
             MapArea::new(start_va, end_va, MapType::Framed, map_perm),
             None,

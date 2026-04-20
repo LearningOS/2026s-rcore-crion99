@@ -183,6 +183,7 @@ pub fn sys_munmap(start: usize, len: usize) -> isize {
     );
     let task = current_task().unwrap();
     let mut inner = task.inner_exclusive_access();
+
     let ret = if inner
         .memory_set
         .munmap(crate::mm::VirtAddr::from(start), len)
