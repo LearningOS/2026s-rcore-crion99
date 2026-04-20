@@ -1,5 +1,6 @@
 //! Process management syscalls
 use alloc::sync::Arc;
+use core::arch::asm;
 
 use crate::{
     loader::get_app_data_by_name,
@@ -154,32 +155,52 @@ pub fn sys_mmap(start: usize, len: usize, port: usize) -> isize {
     let task = current_task().unwrap();
     let mut inner = task.inner_exclusive_access();
 
-    if inner
+    let ret = if inner
         .memory_set
         .mmap(crate::mm::VirtAddr::from(start), len, port)
     {
         0
     } else {
         -1
+    };
+
+    drop(inner);
+
+    if ret == 0 {
+        unsafe {
+            asm!("sfence.vma");
+        }
     }
+
+    ret
 }
 
 /// YOUR JOB: Implement munmap.
-pub fn sys_munmap(_start: usize, _len: usize) -> isize {
+pub fn sys_munmap(start: usize, len: usize) -> isize {
     trace!(
         "kernel:pid[{}] sys_munmap NOT IMPLEMENTED",
         current_task().unwrap().pid.0
     );
     let task = current_task().unwrap();
     let mut inner = task.inner_exclusive_access();
-    if inner
+    let ret = if inner
         .memory_set
-        .munmap(crate::mm::VirtAddr::from(_start), _len)
+        .munmap(crate::mm::VirtAddr::from(start), len)
     {
         0
     } else {
         -1
+    };
+
+    drop(inner);
+
+    if ret == 0 {
+        unsafe {
+            asm!("sfence.vma");
+        }
     }
+
+    ret
 }
 
 /// change data segment size
@@ -217,7 +238,7 @@ pub fn sys_set_priority(prio: isize) -> isize {
         "kernel:pid[{}] sys_set_priority NOT IMPLEMENTED",
         current_task().unwrap().pid.0
     );
-     if prio < 2 {
+    if prio < 2 {
         return -1;
     }
     let task = current_task().unwrap();
