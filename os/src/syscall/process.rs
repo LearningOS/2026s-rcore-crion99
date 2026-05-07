@@ -151,7 +151,7 @@ pub fn sys_spawn(_path: *const u8) -> isize {
     -1
 }
 
-// YOUR JOB: Set task priority.
+/// YOUR JOB: Set task priority.
 pub fn sys_set_priority(_prio: isize) -> isize {
     trace!(
         "kernel:pid[{}] sys_set_priority NOT IMPLEMENTED",
@@ -159,3 +159,4 @@ pub fn sys_set_priority(_prio: isize) -> isize {
     );
     -1
 }
+
