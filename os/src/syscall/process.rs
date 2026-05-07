@@ -110,25 +110,93 @@ pub fn sys_get_time(_ts: *mut TimeVal, _tz: usize) -> isize {
         "kernel:pid[{}] sys_get_time NOT IMPLEMENTED",
         current_task().unwrap().pid.0
     );
-    -1
+    if _ts.is_null() {
+        return -1;
+    }
+    use core::mem::size_of;
+    use core::slice;
+
+    use crate::task::{current_task, current_user_token};
+
+    let us = crate::timer::get_time_us();
+    let tv = TimeVal {
+        sec: us / 1_000_000,
+        usec: us % 1_000_000,
+    };
+    let src =
+        unsafe { slice::from_raw_parts(&tv as *const TimeVal as *const u8, size_of::<TimeVal>()) };
+    let mut written = 0usize;
+    let mut buffers = crate::mm::translated_byte_buffer(
+        current_user_token(),
+        _ts as *const u8,
+        size_of::<TimeVal>(),
+    );
+
+    for buf in buffers.iter_mut() {
+        let len = buf.len();
+        buf.copy_from_slice(&src[written..written + len]);
+        written += len;
+    }
+
+    0
 }
 
 /// YOUR JOB: Implement mmap.
-pub fn sys_mmap(_start: usize, _len: usize, _port: usize) -> isize {
+pub fn sys_mmap(start: usize, len: usize, port: usize) -> isize {
     trace!(
         "kernel:pid[{}] sys_mmap NOT IMPLEMENTED",
         current_task().unwrap().pid.0
     );
-    -1
+    let task = current_task().unwrap();
+    let mut inner = task.inner_exclusive_access();
+
+    let ret = if inner
+        .memory_set
+        .mmap(crate::mm::VirtAddr::from(start), len, port)
+    {
+        0
+    } else {
+        -1
+    };
+
+    drop(inner);
+
+    if ret == 0 {
+        unsafe {
+            asm!("sfence.vma");
+        }
+    }
+
+    ret
 }
 
 /// YOUR JOB: Implement munmap.
-pub fn sys_munmap(_start: usize, _len: usize) -> isize {
+pub fn sys_munmap(start: usize, len: usize) -> isize {
     trace!(
         "kernel:pid[{}] sys_munmap NOT IMPLEMENTED",
         current_task().unwrap().pid.0
     );
-    -1
+    let task = current_task().unwrap();
+    let mut inner = task.inner_exclusive_access();
+
+    let ret = if inner
+        .memory_set
+        .munmap(crate::mm::VirtAddr::from(start), len)
+    {
+        0
+    } else {
+        -1
+    };
+
+    drop(inner);
+
+    if ret == 0 {
+        unsafe {
+            asm!("sfence.vma");
+        }
+    }
+
+    ret
 }
 
 /// change data segment size
@@ -143,20 +211,35 @@ pub fn sys_sbrk(size: i32) -> isize {
 
 /// YOUR JOB: Implement spawn.
 /// HINT: fork + exec =/= spawn
-pub fn sys_spawn(_path: *const u8) -> isize {
+pub fn sys_spawn(path: *const u8) -> isize {
     trace!(
         "kernel:pid[{}] sys_spawn NOT IMPLEMENTED",
         current_task().unwrap().pid.0
     );
-    -1
+    let path_str = translated_str(current_user_token(), path);
+    if let Some(data) = get_app_data_by_name(path_str.as_str()) {
+        let task = current_task().unwrap();
+        let new_task = task.spawn(data);
+        let new_pid = new_task.getpid();
+        add_task(new_task);
+        new_pid as isize
+    } else {
+        -1
+    }
 }
 
-/// YOUR JOB: Set task priority.
-pub fn sys_set_priority(_prio: isize) -> isize {
+// YOUR JOB: Set task priority.
+pub fn sys_set_priority(prio: isize) -> isize {
     trace!(
         "kernel:pid[{}] sys_set_priority NOT IMPLEMENTED",
         current_task().unwrap().pid.0
     );
-    -1
+    if prio < 2 {
+        return -1;
+    }
+    let task = current_task().unwrap();
+    let mut inner = task.inner_exclusive_access();
+    inner.priority = prio as u64;
+    prio
 }
 
