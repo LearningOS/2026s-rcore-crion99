@@ -2,7 +2,7 @@
 //!
 use alloc::sync::Arc;
 use core::arch::asm;
-use crate::loader::get_app_data_by_name;
+
 
 use crate::{
     fs::{open_file, OpenFlags},
@@ -53,10 +53,15 @@ pub fn sys_fork() -> isize {
 }
 
 pub fn sys_exec(path: *const u8) -> isize {
-    trace!("kernel:pid[{}] sys_exec", current_task().unwrap().pid.0);
-    let token = current_user_token();
-    let path = translated_str(token, path);
-    if let Some(app_inode) = open_file(path.as_str(), OpenFlags::RDONLY) {
+    trace!(
+        "kernel:pid[{}] sys_exec",
+        current_task().unwrap().pid.0
+    );
+
+    let path_str = translated_str(current_user_token(), path);
+    let app_name = path_str.rsplit('/').next().unwrap_or(path_str.as_str());
+
+    if let Some(app_inode) = open_file(app_name, OpenFlags::RDONLY) {
         let all_data = app_inode.read_all();
         let task = current_task().unwrap();
         task.exec(all_data.as_slice());
@@ -215,14 +220,20 @@ pub fn sys_sbrk(size: i32) -> isize {
 /// HINT: fork + exec =/= spawn
 pub fn sys_spawn(path: *const u8) -> isize {
     trace!(
-        "kernel:pid[{}] sys_spawn NOT IMPLEMENTED",
+        "kernel:pid[{}] sys_spawn",
         current_task().unwrap().pid.0
     );
+
     let path_str = translated_str(current_user_token(), path);
-    if let Some(data) = get_app_data_by_name(path_str.as_str()) {
+    let app_name = path_str.rsplit('/').next().unwrap_or(path_str.as_str());
+
+    if let Some(app_inode) = open_file(app_name, OpenFlags::RDONLY) {
+        let all_data = app_inode.read_all();
+
         let task = current_task().unwrap();
-        let new_task = task.spawn(data);
+        let new_task = task.spawn(all_data.as_slice());
         let new_pid = new_task.getpid();
+
         add_task(new_task);
         new_pid as isize
     } else {
