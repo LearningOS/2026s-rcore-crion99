@@ -2,6 +2,8 @@
 //!
 use alloc::sync::Arc;
 use core::arch::asm;
+use crate::loader::get_app_data_by_name;
+
 use crate::{
     fs::{open_file, OpenFlags},
     mm::{translated_refmut, translated_str},
