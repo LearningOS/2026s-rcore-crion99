@@ -274,6 +274,27 @@ impl TaskControlBlock {
         } else {
             None
         }
+        
+    }
+    ///创建一个新的子进程，子进程的地址空间是父进程的一个副本
+    pub fn spawn(self: &Arc<TaskControlBlock>, elf_data: &[u8]) -> Arc<TaskControlBlock> {
+
+        let child = Arc::new(TaskControlBlock::new(elf_data));
+
+        {
+            let mut child_inner = child.inner_exclusive_access();
+            child_inner.parent = Some(Arc::downgrade(self));
+        }
+        {
+            let mut parent_inner = self.inner_exclusive_access();
+            parent_inner.children.push(child.clone());
+        }
+
+        child
+    }
+    ///得到pass
+    pub fn get_pass(&self)->u64{
+        BIG_STRIDE / self.inner_exclusive_access().priority
     }
 }
 
