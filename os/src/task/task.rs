@@ -11,6 +11,7 @@ use alloc::vec;
 use alloc::vec::Vec;
 use core::cell::RefMut;
 
+
 /// Task control block structure
 ///
 /// Directly save the contents that will not change during running
@@ -68,6 +69,8 @@ pub struct TaskControlBlockInner {
 
     /// Heap bottom
     pub heap_bottom: usize,
+    /// Program break
+    pub program_brk: usize,
     /// priority
     pub priority: u64,
     /// stride
@@ -220,6 +223,8 @@ impl TaskControlBlock {
                     fd_table: new_fd_table,
                     heap_bottom: parent_inner.heap_bottom,
                     program_brk: parent_inner.program_brk,
+                    priority: parent_inner.priority,
+                    stride: parent_inner.stride,
                 })
             },
         });
