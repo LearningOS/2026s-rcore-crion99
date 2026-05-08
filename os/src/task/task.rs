@@ -11,7 +11,6 @@ use alloc::vec;
 use alloc::vec::Vec;
 use core::cell::RefMut;
 
-
 /// Task control block structure
 ///
 /// Directly save the contents that will not change during running
@@ -69,12 +68,9 @@ pub struct TaskControlBlockInner {
 
     /// Heap bottom
     pub heap_bottom: usize,
+
     /// Program break
     pub program_brk: usize,
-    /// priority
-    pub priority: u64,
-    /// stride
-    pub stride: u64,
 }
 
 impl TaskControlBlockInner {
@@ -121,7 +117,6 @@ impl TaskControlBlock {
             kernel_stack,
             inner: unsafe {
                 UPSafeCell::new(TaskControlBlockInner {
-
                     trap_cx_ppn,
                     base_size: user_sp,
                     task_cx: TaskContext::goto_trap_return(kernel_stack_top),
@@ -140,8 +135,6 @@ impl TaskControlBlock {
                     ],
                     heap_bottom: user_sp,
                     program_brk: user_sp,
-                    priority: 1,
-                    stride: BIG_STRIDE,
                 })
             },
         };
@@ -223,8 +216,6 @@ impl TaskControlBlock {
                     fd_table: new_fd_table,
                     heap_bottom: parent_inner.heap_bottom,
                     program_brk: parent_inner.program_brk,
-                    priority: parent_inner.priority,
-                    stride: parent_inner.stride,
                 })
             },
         });
@@ -269,27 +260,6 @@ impl TaskControlBlock {
         } else {
             None
         }
-    }
-    ///创建一个新的子进程，子进程的地址空间是父进程的一个副本
-    pub fn spawn(self: &Arc<TaskControlBlock>, elf_data: &[u8]) -> Arc<TaskControlBlock> {
-
-        let child = Arc::new(TaskControlBlock::new(elf_data));
-
-
-        {
-            let mut child_inner = child.inner_exclusive_access();
-            child_inner.parent = Some(Arc::downgrade(self));
-        }
-        {
-            let mut parent_inner = self.inner_exclusive_access();
-            parent_inner.children.push(child.clone());
-        }
-
-        child
-    }
-    ///得到pass
-    pub fn get_pass(&self)->u64{
-        BIG_STRIDE / self.inner_exclusive_access().priority
     }
 }
 
