@@ -68,9 +68,10 @@ pub struct TaskControlBlockInner {
 
     /// Heap bottom
     pub heap_bottom: usize,
-
-    /// Program break
-    pub program_brk: usize,
+    /// priority
+    pub priority: u64,
+    /// stride
+    pub stride: u64,
 }
 
 impl TaskControlBlockInner {
@@ -117,6 +118,7 @@ impl TaskControlBlock {
             kernel_stack,
             inner: unsafe {
                 UPSafeCell::new(TaskControlBlockInner {
+
                     trap_cx_ppn,
                     base_size: user_sp,
                     task_cx: TaskContext::goto_trap_return(kernel_stack_top),
@@ -135,6 +137,8 @@ impl TaskControlBlock {
                     ],
                     heap_bottom: user_sp,
                     program_brk: user_sp,
+                    priority: 1,
+                    stride: BIG_STRIDE,
                 })
             },
         };
