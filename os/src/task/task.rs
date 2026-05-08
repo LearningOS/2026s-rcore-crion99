@@ -11,6 +11,9 @@ use alloc::vec;
 use alloc::vec::Vec;
 use core::cell::RefMut;
 
+pub const BIG_STRIDE: u64 = 1_000_000;
+pub const DEFAULT_STRIDE: u64 = 16;
+
 /// Task control block structure
 ///
 /// Directly save the contents that will not change during running
@@ -71,6 +74,11 @@ pub struct TaskControlBlockInner {
 
     /// Program break
     pub program_brk: usize,
+
+        ///优先级
+    pub priority: u64,
+    /// stride
+    pub stride: u64,
 }
 
 impl TaskControlBlockInner {
@@ -135,6 +143,9 @@ impl TaskControlBlock {
                     ],
                     heap_bottom: user_sp,
                     program_brk: user_sp,
+                    priority: DEFAULT_STRIDE,
+                    stride: 0,
+
                 })
             },
         };
@@ -216,6 +227,9 @@ impl TaskControlBlock {
                     fd_table: new_fd_table,
                     heap_bottom: parent_inner.heap_bottom,
                     program_brk: parent_inner.program_brk,
+
+                    priority: DEFAULT_STRIDE,
+                    stride: 0,
                 })
             },
         });
