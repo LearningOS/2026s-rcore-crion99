@@ -22,9 +22,147 @@ pub struct ProcessControlBlock {
     /// mutable
     inner: UPSafeCell<ProcessControlBlockInner>,
 }
+///自定义死锁检测器
+pub struct DeadlockDetector {
+
+      /// Available[j]：第 j 类资源当前可用数量
+    available: Vec<usize>,
+
+    /// Allocation[i][j]：线程 i 已经持有第 j 类资源数量
+    allocation: Vec<Vec<usize>>,
+
+    /// Need[i][j]：线程 i 当前正在等待第 j 类资源数量
+    need: Vec<Vec<usize>>,
+}
+///初始化死锁检测器
+impl DeadlockDetector {
+    pub fn new() -> Self {
+        Self {
+            available: Vec::new(),
+            allocation: Vec::new(),
+            need: Vec::new(),
+        }
+    }
+}
+///扩展资源
+impl DeadlockDetector {
+    pub fn add_thread(&mut self, tid: usize) {
+        while self.allocation.len() <= tid {
+            self.allocation.push(vec![0; self.available.len()]);
+            self.need.push(vec![0; self.available.len()]);
+        }
+    }
+
+    pub fn add_resource(&mut self, count: usize) -> usize {
+        let res_id = self.available.len();
+
+        self.available.push(count);
+
+        for row in self.allocation.iter_mut() {
+            row.push(0);
+        }
+
+        for row in self.need.iter_mut() {
+            row.push(0);
+        }
+
+        res_id
+    }
+}
+///死锁检测算法
+impl DeadlockDetector {
+    pub fn detect(&self) -> bool {
+        let n = self.allocation.len();
+        let m = self.available.len();
+
+        let mut work = self.available.clone();
+        let mut finish = vec![false; n];
+
+        loop {
+            let mut found = false;
+
+            for i in 0..n {
+                if finish[i] {
+                    continue;
+                }
+
+                let mut can_finish = true;
+
+                for j in 0..m {
+                    if self.need[i][j] > work[j] {
+                        can_finish = false;
+                        break;
+                    }
+                }
+
+                if can_finish {
+                    for j in 0..m {
+                        work[j] += self.allocation[i][j];
+                    }
+
+                    finish[i] = true;
+                    found = true;
+                }
+            }
+
+            if !found {
+                break;
+            }
+        }
+
+        // true 表示发生死锁 / 不安全
+        finish.iter().any(|x| !*x)
+    }
+}
+///申请资源
+impl DeadlockDetector {
+    ///前要检测
+    pub fn try_request(&mut self, tid: usize, res_id: usize) -> bool {
+        self.add_thread(tid);
+
+        self.need[tid][res_id] += 1;
+
+        if self.detect() {
+            // 会产生死锁，撤销申请
+            self.need[tid][res_id] -= 1;
+            false
+        } else {
+            true
+        }
+    }
+    ///申请成功后更新状态
+    pub fn acquire(&mut self, tid: usize, res_id: usize) {
+        self.add_thread(tid);
+
+        if self.available[res_id] > 0 {
+            self.available[res_id] -= 1;
+        }
+
+        if self.need[tid][res_id] > 0 {
+            self.need[tid][res_id] -= 1;
+        }
+
+        self.allocation[tid][res_id] += 1;
+    }
+    ///释放资源
+    pub fn release(&mut self, tid: usize, res_id: usize) {
+        if self.allocation[tid][res_id] > 0 {
+            self.allocation[tid][res_id] -= 1;
+            self.available[res_id] += 1;
+        }
+    }
+
+}
 
 /// Inner of Process Control Block
 pub struct ProcessControlBlockInner {
+    ///是否开启死锁检测
+    pub deadlock_detect: bool,
+    ///对应编号的资源是否被占用
+    pub mutex_res: Vec<usize>,
+    pub semaphore_res: Vec<usize>,
+
+    pub deadlock:DeadlockDetector,
     /// is zombie?
     pub is_zombie: bool,
     /// memory set(address space)
@@ -119,6 +257,10 @@ impl ProcessControlBlock {
                     mutex_list: Vec::new(),
                     semaphore_list: Vec::new(),
                     condvar_list: Vec::new(),
+                        deadlock_detect: false,
+                        mutex_res: Vec::new(),
+                        semaphore_res: Vec::new(),
+                        deadlock: DeadlockDetector::new(),
                 })
             },
         });
@@ -245,6 +387,11 @@ impl ProcessControlBlock {
                     mutex_list: Vec::new(),
                     semaphore_list: Vec::new(),
                     condvar_list: Vec::new(),
+                     deadlock_detect: false,
+                        mutex_res: Vec::new(),
+                        semaphore_res: Vec::new(),
+                        deadlock: DeadlockDetector::new(),
+                    
                 })
             },
         });
