@@ -71,86 +71,115 @@ impl DeadlockDetector {
 }
 ///死锁检测算法
 impl DeadlockDetector {
-    pub fn detect(&self) -> bool {
-        let n = self.allocation.len();
-        let m = self.available.len();
+   pub fn detect(&self) -> bool {
+    let n = self.allocation.len();
+    let m = self.available.len();
 
-        let mut work = self.available.clone();
-        let mut finish = vec![false; n];
+    let mut work = self.available.clone();
+    let mut finish = vec![false; n];
 
-        loop {
-            let mut found = false;
+    // 没有持有资源的线程不可能构成死锁环
+    for i in 0..n {
+        if self.allocation[i].iter().all(|&x| x == 0) {
+            finish[i] = true;
+        }
+    }
 
-            for i in 0..n {
-                if finish[i] {
-                    continue;
-                }
+    loop {
+        let mut found = false;
 
-                let mut can_finish = true;
+        for i in 0..n {
+            if finish[i] {
+                continue;
+            }
 
-                for j in 0..m {
-                    if self.need[i][j] > work[j] {
-                        can_finish = false;
-                        break;
-                    }
-                }
+            let mut can_finish = true;
 
-                if can_finish {
-                    for j in 0..m {
-                        work[j] += self.allocation[i][j];
-                    }
-
-                    finish[i] = true;
-                    found = true;
+            for j in 0..m {
+                if self.need[i][j] > work[j] {
+                    can_finish = false;
+                    break;
                 }
             }
 
-            if !found {
-                break;
+            if can_finish {
+                for j in 0..m {
+                    work[j] += self.allocation[i][j];
+                }
+
+                finish[i] = true;
+                found = true;
             }
         }
 
-        // true 表示发生死锁 / 不安全
-        finish.iter().any(|x| !*x)
+        if !found {
+            break;
+        }
     }
+
+    finish.iter().any(|x| !*x)
+}
 }
 ///申请资源
 impl DeadlockDetector {
-    ///前要检测
+   /// 申请资源前调用。
+    /// 返回 false 表示会死锁，应该返回 -0xDEAD。
     pub fn try_request(&mut self, tid: usize, res_id: usize) -> bool {
         self.add_thread(tid);
 
+        // 如果资源当前可用，直接在检测器里先占用。
+        // 后面真实 mutex.lock / sem.down 理论上不会阻塞。
+        if self.available[res_id] > 0 {
+            self.available[res_id] -= 1;
+            self.allocation[tid][res_id] += 1;
+            return true;
+        }
+
+        // 资源不可用，当前线程会等待这个资源
         self.need[tid][res_id] += 1;
 
         if self.detect() {
-            // 会产生死锁，撤销申请
+            // 会死锁，撤销等待关系
             self.need[tid][res_id] -= 1;
             false
         } else {
             true
         }
     }
-    ///申请成功后更新状态
-    pub fn acquire(&mut self, tid: usize, res_id: usize) {
-        self.add_thread(tid);
 
-        if self.available[res_id] > 0 {
-            self.available[res_id] -= 1;
-        }
+    /// 如果之前线程阻塞了，后来被唤醒并真正拿到资源，调用这个
+    pub fn acquire_after_block(&mut self, tid: usize, res_id: usize) {
+        self.add_thread(tid);
 
         if self.need[tid][res_id] > 0 {
             self.need[tid][res_id] -= 1;
-        }
 
-        self.allocation[tid][res_id] += 1;
+            if self.available[res_id] > 0 {
+                self.available[res_id] -= 1;
+            }
+
+            self.allocation[tid][res_id] += 1;
+        }
     }
-    ///释放资源
+
+    /// 释放资源
     pub fn release(&mut self, tid: usize, res_id: usize) {
+        self.add_thread(tid);
+
         if self.allocation[tid][res_id] > 0 {
             self.allocation[tid][res_id] -= 1;
             self.available[res_id] += 1;
         }
     }
+    pub fn semaphore_up(&mut self, tid: usize, res_id: usize) {
+    self.add_thread(tid);
+
+    if self.allocation[tid][res_id] > 0 {
+        self.allocation[tid][res_id] -= 1;
+    }
+
+    self.available[res_id] += 1;
+}
 
 }
 
